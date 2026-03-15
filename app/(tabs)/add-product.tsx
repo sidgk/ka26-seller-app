@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Switch,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -20,6 +21,7 @@ import {
   apiPost,
   uploadImage,
   type Category,
+  type SellerStats,
 } from "../../lib/api";
 import { Colors, Spacing } from "../../lib/theme";
 
@@ -44,10 +46,14 @@ export default function AddProductScreen() {
   const [categoryId, setCategoryId] = useState<number | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [images, setImages] = useState<SelectedImage[]>([]);
+  const [pickupAddress, setPickupAddress] = useState("");
+  const [shippingAvailable, setShippingAvailable] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [productLimit, setProductLimit] = useState<{ available: number; max: number } | null>(null);
 
   useEffect(() => {
     loadCategories();
+    checkProductLimit();
   }, []);
 
   const loadCategories = async () => {
@@ -62,13 +68,22 @@ export default function AddProductScreen() {
     }
   };
 
+  const checkProductLimit = async () => {
+    try {
+      const data = await apiGet<SellerStats>("/api/seller");
+      setProductLimit({
+        available: data.stats.available,
+        max: data.stats.maxProducts,
+      });
+    } catch (err) {
+      console.error("Failed to check product limit:", err);
+    }
+  };
+
   const pickFromCamera = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== "granted") {
-      Alert.alert(
-        "Permission needed",
-        "Please allow camera access to take photos"
-      );
+      Alert.alert("Permission needed", "Please allow camera access to take photos");
       return;
     }
 
@@ -86,13 +101,9 @@ export default function AddProductScreen() {
   };
 
   const pickFromGallery = async () => {
-    const { status } =
-      await ImagePicker.requestMediaLibraryPermissionsAsync();
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== "granted") {
-      Alert.alert(
-        "Permission needed",
-        "Please allow photo library access to select photos"
-      );
+      Alert.alert("Permission needed", "Please allow photo library access to select photos");
       return;
     }
 
@@ -140,14 +151,12 @@ export default function AddProductScreen() {
 
     setSubmitting(true);
     try {
-      // Upload images first
       const uploadedImages: { url: string; publicId: string }[] = [];
       for (const img of images) {
         const uploaded = await uploadImage(img.uri, img.filename);
         uploadedImages.push(uploaded);
       }
 
-      // Create product
       await apiPost("/api/products", {
         title: title.trim(),
         description: description.trim() || null,
@@ -155,15 +164,12 @@ export default function AddProductScreen() {
         condition,
         categoryId,
         images: uploadedImages,
+        pickupAddress: pickupAddress.trim() || null,
+        shippingAvailable,
       });
 
-      Alert.alert("Success", "Product created!", [
-        {
-          text: "OK",
-          onPress: () => {
-            router.back();
-          },
-        },
+      Alert.alert("Success", "Product created! It will expire in 30 days.", [
+        { text: "OK", onPress: () => router.back() },
       ]);
     } catch (err) {
       Alert.alert(
@@ -175,6 +181,8 @@ export default function AddProductScreen() {
     }
   };
 
+  const isAtLimit = productLimit && productLimit.available >= productLimit.max;
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -184,6 +192,22 @@ export default function AddProductScreen() {
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
       >
+        {/* Product limit banner */}
+        {productLimit && (
+          <View style={[styles.limitBanner, isAtLimit && styles.limitBannerFull]}>
+            <Ionicons
+              name={isAtLimit ? "warning" : "information-circle"}
+              size={16}
+              color={isAtLimit ? Colors.danger : Colors.primary}
+            />
+            <Text style={[styles.limitText, isAtLimit && styles.limitTextFull]}>
+              {isAtLimit
+                ? `You've reached your limit of ${productLimit.max} active listings. Mark some as sold or delete them first.`
+                : `${productLimit.available}/${productLimit.max} active listings`}
+            </Text>
+          </View>
+        )}
+
         {/* Image Picker */}
         <Text style={styles.label}>Photos ({images.length}/10)</Text>
         <ScrollView
@@ -230,7 +254,7 @@ export default function AddProductScreen() {
         />
 
         {/* Price */}
-        <Text style={styles.label}>Price (₹) *</Text>
+        <Text style={styles.label}>Price (EUR) *</Text>
         <TextInput
           style={styles.input}
           placeholder="0"
@@ -294,6 +318,29 @@ export default function AddProductScreen() {
           ))}
         </View>
 
+        {/* Pickup Address */}
+        <Text style={styles.label}>Pickup Address</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Where can the buyer pick up the item?"
+          placeholderTextColor={Colors.textMuted}
+          value={pickupAddress}
+          onChangeText={setPickupAddress}
+        />
+
+        {/* Shipping toggle */}
+        <View style={styles.shippingRow}>
+          <View>
+            <Text style={styles.shippingLabel}>Shipping Available</Text>
+            <Text style={styles.shippingHint}>Can you ship this item?</Text>
+          </View>
+          <Switch
+            value={shippingAvailable}
+            onValueChange={setShippingAvailable}
+            trackColor={{ true: Colors.primary }}
+          />
+        </View>
+
         {/* Description */}
         <Text style={styles.label}>Description</Text>
         <TextInput
@@ -309,9 +356,9 @@ export default function AddProductScreen() {
 
         {/* Submit Button */}
         <TouchableOpacity
-          style={[styles.submitButton, submitting && styles.submitDisabled]}
+          style={[styles.submitButton, (submitting || isAtLimit) && styles.submitDisabled]}
           onPress={handleSubmit}
-          disabled={submitting}
+          disabled={submitting || !!isAtLimit}
         >
           {submitting ? (
             <View style={styles.submitContent}>
@@ -321,7 +368,9 @@ export default function AddProductScreen() {
           ) : (
             <View style={styles.submitContent}>
               <Ionicons name="checkmark-circle" size={20} color="#fff" />
-              <Text style={styles.submitText}>Create Product</Text>
+              <Text style={styles.submitText}>
+                {isAtLimit ? "Product Limit Reached" : "Create Product"}
+              </Text>
             </View>
           )}
         </TouchableOpacity>
@@ -331,14 +380,20 @@ export default function AddProductScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.background,
+  container: { flex: 1, backgroundColor: Colors.background },
+  content: { padding: Spacing.lg, paddingBottom: 40 },
+  limitBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    backgroundColor: "#EEF2FF",
+    padding: Spacing.md,
+    borderRadius: 10,
+    marginBottom: Spacing.sm,
   },
-  content: {
-    padding: Spacing.lg,
-    paddingBottom: 40,
-  },
+  limitBannerFull: { backgroundColor: "#FEF2F2" },
+  limitText: { fontSize: 13, color: Colors.primary, flex: 1 },
+  limitTextFull: { color: Colors.danger },
   label: {
     fontSize: 14,
     fontWeight: "700",
@@ -355,13 +410,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: Colors.text,
   },
-  textArea: {
-    minHeight: 100,
-  },
-  imageRow: {
-    gap: Spacing.md,
-    paddingVertical: Spacing.xs,
-  },
+  textArea: { minHeight: 100 },
+  imageRow: { gap: Spacing.md, paddingVertical: Spacing.xs },
   addImageButton: {
     width: 100,
     height: 100,
@@ -379,16 +429,8 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     marginTop: 4,
   },
-  imagePreview: {
-    width: 100,
-    height: 100,
-    borderRadius: 12,
-    overflow: "hidden",
-  },
-  previewImage: {
-    width: "100%",
-    height: "100%",
-  },
+  imagePreview: { width: 100, height: 100, borderRadius: 12, overflow: "hidden" },
+  previewImage: { width: "100%", height: "100%" },
   removeImageBtn: {
     position: "absolute",
     top: 4,
@@ -405,15 +447,8 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 4,
   },
-  mainBadgeText: {
-    color: "#fff",
-    fontSize: 9,
-    fontWeight: "700",
-  },
-  categoryRow: {
-    gap: Spacing.sm,
-    paddingVertical: Spacing.xs,
-  },
+  mainBadgeText: { color: "#fff", fontSize: 9, fontWeight: "700" },
+  categoryRow: { gap: Spacing.sm, paddingVertical: Spacing.xs },
   categoryChip: {
     flexDirection: "row",
     alignItems: "center",
@@ -425,25 +460,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
   },
-  categoryChipActive: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
-  },
-  categoryIcon: {
-    fontSize: 14,
-  },
-  categoryChipText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: Colors.textSecondary,
-  },
-  categoryChipTextActive: {
-    color: "#fff",
-  },
-  conditionRow: {
-    flexDirection: "row",
-    gap: Spacing.sm,
-  },
+  categoryChipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  categoryIcon: { fontSize: 14 },
+  categoryChipText: { fontSize: 13, fontWeight: "600", color: Colors.textSecondary },
+  categoryChipTextActive: { color: "#fff" },
+  conditionRow: { flexDirection: "row", gap: Spacing.sm },
   conditionChip: {
     flex: 1,
     alignItems: "center",
@@ -454,21 +475,24 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
     gap: 2,
   },
-  conditionChipActive: {
-    backgroundColor: Colors.primaryLight,
-    borderColor: Colors.primary,
+  conditionChipActive: { backgroundColor: Colors.primaryLight, borderColor: Colors.primary },
+  conditionIcon: { fontSize: 18 },
+  conditionChipText: { fontSize: 11, fontWeight: "600", color: Colors.textSecondary },
+  conditionChipTextActive: { color: Colors.primary },
+  shippingRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: Spacing.lg,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
-  conditionIcon: {
-    fontSize: 18,
-  },
-  conditionChipText: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: Colors.textSecondary,
-  },
-  conditionChipTextActive: {
-    color: Colors.primary,
-  },
+  shippingLabel: { fontSize: 14, fontWeight: "600", color: Colors.text },
+  shippingHint: { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
   submitButton: {
     backgroundColor: Colors.primary,
     borderRadius: 12,
@@ -476,17 +500,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: Spacing.xxl,
   },
-  submitDisabled: {
-    opacity: 0.6,
-  },
-  submitContent: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
-  },
-  submitText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "700",
-  },
+  submitDisabled: { opacity: 0.6 },
+  submitContent: { flexDirection: "row", alignItems: "center", gap: Spacing.sm },
+  submitText: { color: "#fff", fontSize: 16, fontWeight: "700" },
 });

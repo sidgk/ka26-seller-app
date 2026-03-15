@@ -6,10 +6,17 @@ import {
   ScrollView,
   RefreshControl,
   TouchableOpacity,
+  Alert,
+  Share,
 } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { apiGet, type SellerStats } from "../../lib/api";
+import * as Clipboard from "expo-clipboard";
+import {
+  apiGet,
+  createInvite,
+  type SellerStats,
+} from "../../lib/api";
 import { useAuth } from "../../lib/auth";
 import { Colors, Spacing } from "../../lib/theme";
 
@@ -18,6 +25,7 @@ export default function DashboardScreen() {
   const router = useRouter();
   const [stats, setStats] = useState<SellerStats | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [inviting, setInviting] = useState(false);
 
   const loadStats = async () => {
     try {
@@ -47,6 +55,51 @@ export default function DashboardScreen() {
     return "Good evening";
   };
 
+  const handleInvite = async () => {
+    if (!stats?.stats.canInvite) {
+      Alert.alert(
+        "Invite Limit Reached",
+        "You can only invite one person. Your invite has already been used or is pending."
+      );
+      return;
+    }
+
+    setInviting(true);
+    try {
+      const result = await createInvite();
+      const link = result.invite.inviteLink;
+
+      Alert.alert("Invite Created!", "Share this link with someone you trust.", [
+        {
+          text: "Copy Link",
+          onPress: async () => {
+            await Clipboard.setStringAsync(link);
+            Alert.alert("Copied!", "Invite link copied to clipboard.");
+          },
+        },
+        {
+          text: "Share",
+          onPress: () => {
+            Share.share({
+              message: `You're invited to sell on KA26! Download the app and register here: ${link}`,
+            });
+          },
+        },
+        { text: "Cancel", style: "cancel" },
+      ]);
+    } catch (err) {
+      Alert.alert(
+        "Error",
+        err instanceof Error ? err.message : "Failed to create invite"
+      );
+    } finally {
+      setInviting(false);
+    }
+  };
+
+  const trustScore = stats?.seller?.trustScore ?? 0;
+  const trustStars = Math.round(trustScore / 20); // 0-100 → 0-5 stars
+
   return (
     <ScrollView
       style={styles.container}
@@ -64,6 +117,39 @@ export default function DashboardScreen() {
           Here&apos;s your store overview
         </Text>
       </View>
+
+      {/* Trust Score Card */}
+      {stats && (
+        <View style={styles.trustCard}>
+          <View style={styles.trustHeader}>
+            <Ionicons name="shield-checkmark" size={20} color={Colors.primary} />
+            <Text style={styles.trustTitle}>Trust Score</Text>
+          </View>
+          <View style={styles.trustBody}>
+            <Text style={styles.trustScore}>{trustScore}</Text>
+            <Text style={styles.trustMax}>/100</Text>
+          </View>
+          <View style={styles.trustStars}>
+            {[1, 2, 3, 4, 5].map((i) => (
+              <Ionicons
+                key={i}
+                name={i <= trustStars ? "star" : "star-outline"}
+                size={16}
+                color={i <= trustStars ? "#F59E0B" : Colors.textMuted}
+              />
+            ))}
+          </View>
+          <View style={styles.trustDetails}>
+            <Text style={styles.trustDetail}>
+              {stats.seller.totalSales} sales
+            </Text>
+            <Text style={styles.trustDot}>·</Text>
+            <Text style={styles.trustDetail}>
+              {stats.stats.referrals} referral{stats.stats.referrals !== 1 ? "s" : ""}
+            </Text>
+          </View>
+        </View>
+      )}
 
       {/* Stats Cards */}
       <View style={styles.statsGrid}>
@@ -92,6 +178,34 @@ export default function DashboardScreen() {
         </View>
       </View>
 
+      {/* Product Limit */}
+      {stats && (
+        <View style={styles.limitBar}>
+          <Text style={styles.limitText}>
+            Active listings: {stats.stats.available}/{stats.stats.maxProducts}
+          </Text>
+          <View style={styles.limitTrack}>
+            <View
+              style={[
+                styles.limitFill,
+                {
+                  width: `${Math.min((stats.stats.available / stats.stats.maxProducts) * 100, 100)}%`,
+                  backgroundColor:
+                    stats.stats.available >= stats.stats.maxProducts
+                      ? Colors.danger
+                      : Colors.primary,
+                },
+              ]}
+            />
+          </View>
+          {stats.stats.expired > 0 && (
+            <Text style={styles.expiredText}>
+              {stats.stats.expired} expired listing{stats.stats.expired !== 1 ? "s" : ""}
+            </Text>
+          )}
+        </View>
+      )}
+
       {/* Quick Actions */}
       <Text style={styles.sectionTitle}>Quick Actions</Text>
       <View style={styles.actionsContainer}>
@@ -116,13 +230,14 @@ export default function DashboardScreen() {
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={styles.actionButton}
-          onPress={() => router.push("/(tabs)/profile")}
+          style={[styles.actionButton, inviting && { opacity: 0.6 }]}
+          onPress={handleInvite}
+          disabled={inviting}
         >
-          <View style={[styles.actionIcon, { backgroundColor: "#fffbeb" }]}>
-            <Ionicons name="settings" size={24} color={Colors.warning} />
+          <View style={[styles.actionIcon, { backgroundColor: "#EEF2FF" }]}>
+            <Ionicons name="person-add" size={24} color="#6366F1" />
           </View>
-          <Text style={styles.actionText}>Settings</Text>
+          <Text style={styles.actionText}>Invite Seller</Text>
         </TouchableOpacity>
       </View>
 
@@ -148,7 +263,7 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.xxxl,
   },
   greetingContainer: {
-    marginBottom: Spacing.xxl,
+    marginBottom: Spacing.lg,
   },
   greeting: {
     fontSize: 24,
@@ -160,11 +275,64 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     marginTop: Spacing.xs,
   },
+  trustCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    padding: Spacing.lg,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    marginBottom: Spacing.lg,
+    alignItems: "center",
+  },
+  trustHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    marginBottom: Spacing.sm,
+  },
+  trustTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: Colors.text,
+  },
+  trustBody: {
+    flexDirection: "row",
+    alignItems: "baseline",
+  },
+  trustScore: {
+    fontSize: 36,
+    fontWeight: "800",
+    color: Colors.primary,
+  },
+  trustMax: {
+    fontSize: 16,
+    color: Colors.textMuted,
+    fontWeight: "600",
+  },
+  trustStars: {
+    flexDirection: "row",
+    gap: 2,
+    marginTop: 4,
+  },
+  trustDetails: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    marginTop: Spacing.sm,
+  },
+  trustDetail: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+  },
+  trustDot: {
+    fontSize: 12,
+    color: Colors.textMuted,
+  },
   statsGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: Spacing.md,
-    marginBottom: Spacing.xxl,
+    marginBottom: Spacing.lg,
   },
   statCard: {
     width: "47%",
@@ -188,6 +356,34 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.textSecondary,
     marginTop: 2,
+  },
+  limitBar: {
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    padding: Spacing.lg,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    marginBottom: Spacing.xxl,
+  },
+  limitText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: Colors.text,
+    marginBottom: Spacing.sm,
+  },
+  limitTrack: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: Colors.border,
+  },
+  limitFill: {
+    height: 6,
+    borderRadius: 3,
+  },
+  expiredText: {
+    fontSize: 12,
+    color: Colors.warning,
+    marginTop: Spacing.sm,
   },
   sectionTitle: {
     fontSize: 18,

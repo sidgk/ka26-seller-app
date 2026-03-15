@@ -18,6 +18,7 @@ import { Colors, Spacing } from "../../lib/theme";
 
 export default function RegisterScreen() {
   const { setSeller } = useAuth();
+  const [inviteCode, setInviteCode] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -25,6 +26,10 @@ export default function RegisterScreen() {
   const [loading, setLoading] = useState(false);
 
   const handleRegister = async () => {
+    if (!inviteCode) {
+      Alert.alert("Invite Required", "You need an invite code from an existing seller to register.");
+      return;
+    }
     if (!name || !email || !password || !whatsapp) {
       Alert.alert("Error", "Please fill in all fields");
       return;
@@ -36,7 +41,7 @@ export default function RegisterScreen() {
 
     setLoading(true);
     try {
-      const data = await register(name.trim(), email.trim(), password, whatsapp);
+      const data = await register(name.trim(), email.trim(), password, whatsapp, inviteCode.trim());
       setSeller(data.seller);
     } catch (err) {
       Alert.alert(
@@ -63,11 +68,26 @@ export default function RegisterScreen() {
           </View>
           <Text style={styles.title}>Join KA26</Text>
           <Text style={styles.subtitle}>
-            Create your seller account
+            Invite-only seller registration
           </Text>
         </View>
 
         <View style={styles.form}>
+          <View style={styles.inviteBox}>
+            <Text style={styles.inviteLabel}>Invite Code</Text>
+            <TextInput
+              style={styles.inviteInput}
+              placeholder="Paste your invite code here"
+              placeholderTextColor={Colors.textMuted}
+              value={inviteCode}
+              onChangeText={setInviteCode}
+              autoCapitalize="none"
+            />
+            <Text style={styles.inviteHint}>
+              Ask an existing KA26 seller for an invite.
+            </Text>
+          </View>
+
           <TextInput
             style={styles.input}
             placeholder="Your name"
@@ -159,6 +179,34 @@ const styles = StyleSheet.create({
     marginTop: Spacing.xs,
   },
   form: { gap: Spacing.md },
+  inviteBox: {
+    backgroundColor: "#EEF2FF",
+    borderWidth: 1,
+    borderColor: "#C7D2FE",
+    borderRadius: 12,
+    padding: Spacing.lg,
+  },
+  inviteLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: Colors.primary,
+    marginBottom: Spacing.xs,
+  },
+  inviteInput: {
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 8,
+    padding: Spacing.md,
+    fontSize: 14,
+    color: Colors.text,
+    fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
+  },
+  inviteHint: {
+    fontSize: 11,
+    color: Colors.textMuted,
+    marginTop: Spacing.xs,
+  },
   input: {
     backgroundColor: Colors.surface,
     borderWidth: 1,

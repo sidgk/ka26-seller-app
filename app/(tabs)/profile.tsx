@@ -8,22 +8,36 @@ import {
   Alert,
   RefreshControl,
   Linking,
+  Share,
 } from "react-native";
 import { useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { apiGet, type SellerStats } from "../../lib/api";
+import * as Clipboard from "expo-clipboard";
+import {
+  apiGet,
+  createInvite,
+  getMyInvites,
+  type SellerStats,
+  type Invite,
+} from "../../lib/api";
 import { useAuth } from "../../lib/auth";
 import { Colors, Spacing } from "../../lib/theme";
 
 export default function ProfileScreen() {
   const { seller, logout } = useAuth();
   const [stats, setStats] = useState<SellerStats | null>(null);
+  const [invites, setInvites] = useState<Invite[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [inviting, setInviting] = useState(false);
 
   const loadProfile = async () => {
     try {
-      const data = await apiGet<SellerStats>("/api/seller");
+      const [data, inviteData] = await Promise.all([
+        apiGet<SellerStats>("/api/seller"),
+        getMyInvites(),
+      ]);
       setStats(data);
+      setInvites(inviteData);
     } catch (err) {
       console.error("Failed to load profile:", err);
     }
@@ -54,6 +68,49 @@ export default function ProfileScreen() {
     ]);
   };
 
+  const handleInvite = async () => {
+    if (!stats?.stats.canInvite) {
+      Alert.alert(
+        "Invite Limit Reached",
+        "You can only invite one person. Your invite has already been used or is pending."
+      );
+      return;
+    }
+
+    setInviting(true);
+    try {
+      const result = await createInvite();
+      const link = result.invite.inviteLink;
+
+      Alert.alert("Invite Created!", "Share this link with someone you trust.", [
+        {
+          text: "Copy Link",
+          onPress: async () => {
+            await Clipboard.setStringAsync(link);
+            Alert.alert("Copied!", "Invite link copied to clipboard.");
+          },
+        },
+        {
+          text: "Share",
+          onPress: () => {
+            Share.share({
+              message: `You're invited to sell on KA26! Download the app and register here: ${link}`,
+            });
+          },
+        },
+        { text: "Cancel", style: "cancel" },
+      ]);
+      await loadProfile();
+    } catch (err) {
+      Alert.alert(
+        "Error",
+        err instanceof Error ? err.message : "Failed to create invite"
+      );
+    } finally {
+      setInviting(false);
+    }
+  };
+
   const sellerInfo = stats?.seller || seller;
   const memberSince = stats?.seller?.createdAt
     ? new Date(stats.seller.createdAt).toLocaleDateString("en-IN", {
@@ -61,6 +118,9 @@ export default function ProfileScreen() {
         year: "numeric",
       })
     : null;
+
+  const trustScore = stats?.seller?.trustScore ?? 0;
+  const trustStars = Math.round(trustScore / 20);
 
   return (
     <ScrollView
@@ -82,6 +142,23 @@ export default function ProfileScreen() {
         {memberSince && (
           <Text style={styles.memberSince}>Member since {memberSince}</Text>
         )}
+
+        {/* Trust Score Badge */}
+        {stats && (
+          <View style={styles.trustBadge}>
+            <View style={styles.trustStars}>
+              {[1, 2, 3, 4, 5].map((i) => (
+                <Ionicons
+                  key={i}
+                  name={i <= trustStars ? "star" : "star-outline"}
+                  size={14}
+                  color={i <= trustStars ? "#F59E0B" : Colors.textMuted}
+                />
+              ))}
+            </View>
+            <Text style={styles.trustText}>Trust Score: {trustScore}/100</Text>
+          </View>
+        )}
       </View>
 
       {/* Stats Summary */}
@@ -93,16 +170,73 @@ export default function ProfileScreen() {
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{stats.stats.available}</Text>
-            <Text style={styles.statLabel}>Active</Text>
+            <Text style={styles.statValue}>{stats.seller.totalSales}</Text>
+            <Text style={styles.statLabel}>Sales</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{stats.stats.sold}</Text>
-            <Text style={styles.statLabel}>Sold</Text>
+            <Text style={styles.statValue}>{stats.stats.referrals}</Text>
+            <Text style={styles.statLabel}>Referrals</Text>
           </View>
         </View>
       )}
+
+      {/* Invite Section */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Invite a Seller</Text>
+
+        <TouchableOpacity
+          style={[styles.inviteButton, inviting && { opacity: 0.6 }]}
+          onPress={handleInvite}
+          disabled={inviting || !stats?.stats.canInvite}
+        >
+          <Ionicons name="person-add" size={20} color="#fff" />
+          <Text style={styles.inviteButtonText}>
+            {stats?.stats.canInvite
+              ? "Create Invite Link"
+              : "Invite Already Sent"}
+          </Text>
+        </TouchableOpacity>
+
+        <Text style={styles.inviteHint}>
+          You can invite one trusted person to sell on KA26.
+        </Text>
+
+        {/* Existing Invites */}
+        {invites.length > 0 && (
+          <View style={styles.inviteList}>
+            {invites.map((invite) => (
+              <View key={invite.id} style={styles.inviteItem}>
+                <View style={styles.inviteInfo}>
+                  <Text style={styles.inviteName}>
+                    {invite.refereeName || invite.refereeEmail || "Invite"}
+                  </Text>
+                  <Text style={styles.inviteStatus}>
+                    {invite.status === "accepted"
+                      ? "Accepted"
+                      : invite.status === "expired"
+                      ? "Expired"
+                      : `Pending · Expires ${new Date(invite.expiresAt).toLocaleDateString()}`}
+                  </Text>
+                </View>
+                <View
+                  style={[
+                    styles.inviteStatusDot,
+                    {
+                      backgroundColor:
+                        invite.status === "accepted"
+                          ? Colors.success
+                          : invite.status === "expired"
+                          ? Colors.danger
+                          : Colors.warning,
+                    },
+                  ]}
+                />
+              </View>
+            ))}
+          </View>
+        )}
+      </View>
 
       {/* Account Details */}
       <View style={styles.section}>
@@ -223,6 +357,24 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     marginTop: 4,
   },
+  trustBadge: {
+    alignItems: "center",
+    marginTop: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    backgroundColor: "#FFFBEB",
+    borderRadius: 20,
+  },
+  trustStars: {
+    flexDirection: "row",
+    gap: 2,
+  },
+  trustText: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+    marginTop: 2,
+    fontWeight: "600",
+  },
   statsRow: {
     flexDirection: "row",
     backgroundColor: Colors.surface,
@@ -265,6 +417,59 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.lg,
     paddingBottom: Spacing.sm,
+  },
+  inviteButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.sm,
+    marginHorizontal: Spacing.lg,
+    marginTop: Spacing.sm,
+    padding: Spacing.md,
+    borderRadius: 12,
+    backgroundColor: "#6366F1",
+  },
+  inviteButtonText: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  inviteHint: {
+    fontSize: 12,
+    color: Colors.textMuted,
+    textAlign: "center",
+    marginTop: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+  },
+  inviteList: {
+    marginTop: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.md,
+  },
+  inviteItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: Spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  inviteInfo: {
+    flex: 1,
+  },
+  inviteName: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: Colors.text,
+  },
+  inviteStatus: {
+    fontSize: 12,
+    color: Colors.textMuted,
+    marginTop: 1,
+  },
+  inviteStatusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
   menuItem: {
     flexDirection: "row",

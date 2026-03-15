@@ -1,6 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-// In dev, use your local machine's IP. In prod, use the deployed URL.
 const API_BASE =
   process.env.EXPO_PUBLIC_API_URL || "https://ka26-marketplace-4374945524.us-central1.run.app";
 
@@ -100,10 +99,7 @@ export async function uploadImage(
 
   const res = await fetch(`${API_BASE}/api/upload`, {
     method: "POST",
-    headers: {
-      ...headers,
-      // Don't set Content-Type — fetch sets it with boundary for FormData
-    },
+    headers: { ...headers },
     body: formData,
   });
 
@@ -133,13 +129,14 @@ export async function register(
   name: string,
   email: string,
   password: string,
-  whatsappNumber: string
+  whatsappNumber: string,
+  inviteToken: string
 ): Promise<{ token: string; seller: Seller }> {
   const data = await apiPost<{
     success: boolean;
     token: string;
     seller: Seller;
-  }>("/api/auth/register", { name, email, password, whatsappNumber });
+  }>("/api/auth/register", { name, email, password, whatsappNumber, inviteToken });
   await setToken(data.token);
   return data;
 }
@@ -157,6 +154,18 @@ export async function verifyAuth(): Promise<{
   } catch {
     return { authenticated: false };
   }
+}
+
+// Invite
+export async function createInvite(name?: string, email?: string): Promise<{
+  success: boolean;
+  invite: { token: string; inviteLink: string; expiresAt: string };
+}> {
+  return apiPost("/api/invite", { name: name || null, email: email || null });
+}
+
+export async function getMyInvites(): Promise<Invite[]> {
+  return apiGet("/api/invite");
 }
 
 // Types
@@ -189,6 +198,11 @@ export interface Product {
   price: string;
   condition: string | null;
   status: string;
+  pickupAddress: string | null;
+  shippingAvailable: boolean;
+  latitude: number | null;
+  longitude: number | null;
+  expiresAt: string | null;
   categoryId: number;
   category: Category;
   sellerId: number;
@@ -199,11 +213,31 @@ export interface Product {
 }
 
 export interface SellerStats {
-  seller: Seller & { whatsappNumber: string; createdAt: string };
+  seller: Seller & {
+    whatsappNumber: string;
+    createdAt: string;
+    trustScore: number;
+    totalSales: number;
+    maxProducts: number;
+  };
   stats: {
     total: number;
     available: number;
     sold: number;
     reserved: number;
+    expired: number;
+    maxProducts: number;
+    referrals: number;
+    canInvite: boolean;
   };
+}
+
+export interface Invite {
+  id: number;
+  token: string;
+  refereeName: string | null;
+  refereeEmail: string | null;
+  status: string;
+  expiresAt: string;
+  createdAt: string;
 }

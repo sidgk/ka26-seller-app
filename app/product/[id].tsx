@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Switch,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -21,7 +22,6 @@ import {
   uploadImage,
   type Product,
   type Category,
-  type ProductImage,
 } from "../../lib/api";
 import { Colors, Spacing } from "../../lib/theme";
 
@@ -60,7 +60,12 @@ export default function EditProductScreen() {
   const [categoryId, setCategoryId] = useState<number | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [images, setImages] = useState<LocalImage[]>([]);
+  const [pickupAddress, setPickupAddress] = useState("");
+  const [shippingAvailable, setShippingAvailable] = useState(false);
+  const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  const isExpired = expiresAt ? new Date(expiresAt) < new Date() : false;
 
   useEffect(() => {
     loadProduct();
@@ -76,6 +81,9 @@ export default function EditProductScreen() {
       setCondition(product.condition || "good");
       setStatus(product.status);
       setCategoryId(product.categoryId);
+      setPickupAddress(product.pickupAddress || "");
+      setShippingAvailable(product.shippingAvailable);
+      setExpiresAt(product.expiresAt);
       setImages(
         product.images.map((img) => ({
           id: img.id,
@@ -168,6 +176,34 @@ export default function EditProductScreen() {
     ]);
   };
 
+  const handleRenew = async () => {
+    Alert.alert(
+      "Renew Listing",
+      "This will extend your listing for another 30 days. Continue?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Renew",
+          onPress: async () => {
+            setSubmitting(true);
+            try {
+              await apiPut(`/api/products/${id}`, { renew: true });
+              Alert.alert("Success", "Listing renewed for 30 more days!");
+              await loadProduct();
+            } catch (err) {
+              Alert.alert(
+                "Error",
+                err instanceof Error ? err.message : "Failed to renew"
+              );
+            } finally {
+              setSubmitting(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleSave = async () => {
     if (!title.trim()) {
       Alert.alert("Error", "Please enter a product title");
@@ -184,7 +220,6 @@ export default function EditProductScreen() {
 
     setSubmitting(true);
     try {
-      // Upload new images
       const finalImages: { id?: number; url: string; publicId: string }[] = [];
 
       for (const img of images) {
@@ -211,6 +246,8 @@ export default function EditProductScreen() {
         categoryId,
         status,
         images: finalImages,
+        pickupAddress: pickupAddress.trim() || null,
+        shippingAvailable,
       });
 
       Alert.alert("Success", "Product updated!", [
@@ -234,6 +271,10 @@ export default function EditProductScreen() {
     );
   }
 
+  const daysLeft = expiresAt
+    ? Math.max(0, Math.ceil((new Date(expiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
+    : null;
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -243,6 +284,31 @@ export default function EditProductScreen() {
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
       >
+        {/* Expiration Banner */}
+        {expiresAt && (
+          <View style={[styles.expirationBanner, isExpired && styles.expirationBannerExpired]}>
+            <Ionicons
+              name={isExpired ? "alert-circle" : "time-outline"}
+              size={16}
+              color={isExpired ? Colors.danger : Colors.warning}
+            />
+            <Text style={[styles.expirationText, isExpired && styles.expirationTextExpired]}>
+              {isExpired
+                ? "This listing has expired. Renew it to make it visible again."
+                : `Expires in ${daysLeft} day${daysLeft !== 1 ? "s" : ""}`}
+            </Text>
+            {isExpired && (
+              <TouchableOpacity
+                style={styles.renewButton}
+                onPress={handleRenew}
+                disabled={submitting}
+              >
+                <Text style={styles.renewButtonText}>Renew</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+
         {/* Image Picker */}
         <Text style={styles.label}>Photos ({images.length}/10)</Text>
         <ScrollView
@@ -322,7 +388,7 @@ export default function EditProductScreen() {
         />
 
         {/* Price */}
-        <Text style={styles.label}>Price (₹) *</Text>
+        <Text style={styles.label}>Price (EUR) *</Text>
         <TextInput
           style={styles.input}
           placeholder="0"
@@ -386,6 +452,29 @@ export default function EditProductScreen() {
           ))}
         </View>
 
+        {/* Pickup Address */}
+        <Text style={styles.label}>Pickup Address</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Where can the buyer pick up the item?"
+          placeholderTextColor={Colors.textMuted}
+          value={pickupAddress}
+          onChangeText={setPickupAddress}
+        />
+
+        {/* Shipping toggle */}
+        <View style={styles.shippingRow}>
+          <View>
+            <Text style={styles.shippingLabel}>Shipping Available</Text>
+            <Text style={styles.shippingHint}>Can you ship this item?</Text>
+          </View>
+          <Switch
+            value={shippingAvailable}
+            onValueChange={setShippingAvailable}
+            trackColor={{ true: Colors.primary }}
+          />
+        </View>
+
         {/* Description */}
         <Text style={styles.label}>Description</Text>
         <TextInput
@@ -436,6 +525,37 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     backgroundColor: Colors.background,
+  },
+  expirationBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    backgroundColor: "#FFFBEB",
+    padding: Spacing.md,
+    borderRadius: 10,
+    marginBottom: Spacing.md,
+  },
+  expirationBannerExpired: {
+    backgroundColor: "#FEF2F2",
+  },
+  expirationText: {
+    flex: 1,
+    fontSize: 13,
+    color: Colors.warning,
+  },
+  expirationTextExpired: {
+    color: Colors.danger,
+  },
+  renewButton: {
+    backgroundColor: Colors.primary,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: 8,
+  },
+  renewButtonText: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "700",
   },
   label: {
     fontSize: 14,
@@ -592,6 +712,28 @@ const styles = StyleSheet.create({
   },
   conditionChipTextActive: {
     color: Colors.primary,
+  },
+  shippingRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: Spacing.lg,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  shippingLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: Colors.text,
+  },
+  shippingHint: {
+    fontSize: 12,
+    color: Colors.textMuted,
+    marginTop: 2,
   },
   submitButton: {
     backgroundColor: Colors.primary,
