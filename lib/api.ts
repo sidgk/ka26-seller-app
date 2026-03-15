@@ -2,7 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 // In dev, use your local machine's IP. In prod, use the deployed URL.
 const API_BASE =
-  process.env.EXPO_PUBLIC_API_URL || "http://192.168.0.100:3000";
+  process.env.EXPO_PUBLIC_API_URL || "https://ka26-marketplace-4374945524.us-central1.run.app";
 
 const TOKEN_KEY = "ka26_seller_token";
 
