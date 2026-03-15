@@ -7,3 +7,8 @@ dist/
 .env.local
 ios/
 android/
+
+# Secrets - never commit
+credentials.json
+*.jks
+*.keystore
