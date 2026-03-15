@@ -1,30 +1,56 @@
 {
   "expo": {
-    "name": "ka26-seller-app",
+    "name": "KA26 Seller",
     "slug": "ka26-seller-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
+    "scheme": "ka26seller",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#2563eb"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": false,
+      "bundleIdentifier": "com.ka26.seller",
+      "infoPlist": {
+        "NSCameraUsageDescription": "KA26 needs camera access to take product photos",
+        "NSPhotoLibraryUsageDescription": "KA26 needs photo library access to upload product images"
+      }
     },
     "android": {
+      "package": "com.ka26.seller",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#2563eb",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "KA26 needs access to your photos to upload product images",
+          "cameraPermission": "KA26 needs camera access to take product photos"
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "ka26-seller"
+      }
     }
   }
 }
