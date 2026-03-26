@@ -12,3 +12,4 @@ android/
 credentials.json
 *.jks
 *.keystore
+*.apk
