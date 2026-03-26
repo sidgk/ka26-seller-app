@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -8,13 +8,22 @@ import {
   Modal,
   Pressable,
 } from "react-native";
-import { Tabs } from "expo-router";
+import { Tabs, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Colors } from "../../lib/theme";
 import { apiGet, apiPost } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
 
 const ADMIN_EMAIL = "siddugkattimani@gmail.com";
+
+interface NotifData {
+  orderId?: number;
+  storeId?: number;
+  storeName?: string;
+  productId?: number;
+  status?: string;
+  [key: string]: unknown;
+}
 
 interface Notification {
   id: number;
@@ -23,6 +32,7 @@ interface Notification {
   body: string;
   isRead: boolean;
   createdAt: string;
+  data?: NotifData;
 }
 
 function timeAgo(d: string) {
@@ -33,7 +43,38 @@ function timeAgo(d: string) {
   return Math.floor(s / 86400) + "d";
 }
 
+const NOTIF_ICONS: Record<string, string> = {
+  new_order: "cart",
+  order_update: "checkmark-circle",
+  new_subscriber: "person-add",
+  broadcast_sent: "megaphone",
+  store_new_product: "cube",
+  system: "information-circle",
+};
+
+function getNotifIcon(type: string): string {
+  return NOTIF_ICONS[type] || "notifications";
+}
+
+function getNotifColor(type: string): string {
+  switch (type) {
+    case "new_order":
+      return "#F59E0B";
+    case "order_update":
+      return "#10B981";
+    case "new_subscriber":
+      return "#3B82F6";
+    case "broadcast_sent":
+      return "#8B5CF6";
+    case "store_new_product":
+      return "#F97316";
+    default:
+      return "#6B7280";
+  }
+}
+
 function NotifBellHeader() {
+  const router = useRouter();
   const [unread, setUnread] = useState(0);
   const [notifs, setNotifs] = useState<Notification[]>([]);
   const [showPanel, setShowPanel] = useState(false);
@@ -55,20 +96,44 @@ function NotifBellHeader() {
     return () => clearInterval(interval);
   }, []);
 
-  const markAllRead = async () => {
-    try {
-      await apiPost("/api/seller/notifications", { all: true });
-      setUnread(0);
-      setNotifs((prev) => prev.map((n) => ({ ...n, isRead: true })));
-    } catch {}
+  // Auto-mark all as read when panel opens
+  const openPanel = async () => {
+    setShowPanel(true);
+    if (unread > 0) {
+      try {
+        await apiPost("/api/seller/notifications", { all: true });
+        setUnread(0);
+        setNotifs((prev) => prev.map((n) => ({ ...n, isRead: true })));
+      } catch {}
+    }
+  };
+
+  // Navigate based on notification type
+  const handleNotifTap = (n: Notification) => {
+    setShowPanel(false);
+    switch (n.type) {
+      case "new_order":
+      case "order_update":
+        // Go to restaurant tab (which has orders)
+        router.navigate("/(tabs)/restaurant");
+        break;
+      case "new_subscriber":
+      case "store_new_product":
+        // Go to products
+        router.navigate("/(tabs)/products");
+        break;
+      case "broadcast_sent":
+      case "system":
+      default:
+        // Go to home
+        router.navigate("/(tabs)/");
+        break;
+    }
   };
 
   return (
     <>
-      <TouchableOpacity
-        onPress={() => setShowPanel(true)}
-        style={styles.bellButton}
-      >
+      <TouchableOpacity onPress={openPanel} style={styles.bellButton}>
         <Ionicons name="notifications-outline" size={22} color={Colors.text} />
         {unread > 0 && (
           <View style={styles.bellBadge}>
@@ -95,11 +160,7 @@ function NotifBellHeader() {
           >
             <View style={styles.notifHeader}>
               <Text style={styles.notifHeaderTitle}>Notifications</Text>
-              {unread > 0 && (
-                <TouchableOpacity onPress={markAllRead}>
-                  <Text style={styles.markAllRead}>Mark all read</Text>
-                </TouchableOpacity>
-              )}
+              <Text style={styles.notifCount}>{notifs.length} total</Text>
             </View>
 
             <ScrollView style={styles.notifList}>
@@ -116,19 +177,27 @@ function NotifBellHeader() {
                 </View>
               ) : (
                 notifs.slice(0, 20).map((n) => (
-                  <View
+                  <TouchableOpacity
                     key={n.id}
-                    style={[
-                      styles.notifItem,
-                      !n.isRead && styles.notifItemUnread,
-                    ]}
+                    style={styles.notifItem}
+                    onPress={() => handleNotifTap(n)}
+                    activeOpacity={0.6}
                   >
+                    <View
+                      style={[
+                        styles.notifIcon,
+                        { backgroundColor: getNotifColor(n.type) + "18" },
+                      ]}
+                    >
+                      <Ionicons
+                        name={getNotifIcon(n.type) as any}
+                        size={18}
+                        color={getNotifColor(n.type)}
+                      />
+                    </View>
                     <View style={styles.notifItemContent}>
                       <View style={styles.notifItemRow}>
-                        <Text
-                          style={styles.notifItemTitle}
-                          numberOfLines={1}
-                        >
+                        <Text style={styles.notifItemTitle} numberOfLines={1}>
                           {n.title}
                         </Text>
                         <Text style={styles.notifItemTime}>
@@ -139,7 +208,12 @@ function NotifBellHeader() {
                         {n.body}
                       </Text>
                     </View>
-                  </View>
+                    <Ionicons
+                      name="chevron-forward"
+                      size={14}
+                      color="#D1D5DB"
+                    />
+                  </TouchableOpacity>
                 ))
               )}
             </ScrollView>
@@ -319,10 +393,9 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#111827",
   },
-  markAllRead: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: Colors.primary,
+  notifCount: {
+    fontSize: 12,
+    color: Colors.textMuted,
   },
   notifList: {
     maxHeight: 400,
@@ -337,15 +410,24 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   notifItem: {
-    paddingHorizontal: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
     paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: "#F9FAFB",
+    gap: 10,
   },
-  notifItemUnread: {
-    backgroundColor: "#EFF6FF",
+  notifIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    justifyContent: "center",
+    alignItems: "center",
   },
-  notifItemContent: {},
+  notifItemContent: {
+    flex: 1,
+  },
   notifItemRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -353,7 +435,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   notifItemTitle: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "600",
     color: "#111827",
     flex: 1,
@@ -366,6 +448,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#6B7280",
     marginTop: 2,
+    lineHeight: 16,
   },
   notifClose: {
     paddingVertical: 14,
