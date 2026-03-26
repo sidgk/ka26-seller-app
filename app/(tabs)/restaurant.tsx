@@ -44,6 +44,21 @@ interface MenuItem {
   isAvailable: boolean;
 }
 
+interface Order {
+  id: number;
+  orderNumber: string;
+  status: string;
+  customerName: string;
+  customerPhone: string;
+  deliveryAddress: string;
+  instructions: string | null;
+  subtotal: string;
+  deliveryFee: string;
+  total: string;
+  createdAt: string;
+  items: { id: number; quantity: number; price: string; menuItem: { name: string } }[];
+}
+
 type Tab = "overview" | "menu" | "orders";
 
 export default function RestaurantScreen() {
@@ -52,6 +67,7 @@ export default function RestaurantScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
   const [hasRestaurant, setHasRestaurant] = useState<boolean | null>(null);
   const [tab, setTab] = useState<Tab>("overview");
 
@@ -83,11 +99,13 @@ export default function RestaurantScreen() {
       const data = await apiGet<{
         restaurant: Restaurant;
         menuItems: MenuItem[];
+        orders: Order[];
         error?: string;
       }>("/api/seller/restaurant");
       if (data.restaurant) {
         setRestaurant(data.restaurant);
         setMenuItems(data.menuItems || []);
+        setOrders(data.orders || []);
         setHasRestaurant(true);
       } else {
         setHasRestaurant(false);
@@ -205,6 +223,59 @@ export default function RestaurantScreen() {
     } catch {}
   };
 
+  const updateOrderStatus = async (orderId: number, newStatus: string) => {
+    try {
+      const token = await getToken();
+      const API_BASE = process.env.EXPO_PUBLIC_API_URL || "https://ka26.shop";
+      const res = await fetch(
+        `${API_BASE}/api/orders/${orderId}/status`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ status: newStatus }),
+        }
+      );
+      if (res.ok) {
+        setOrders((prev) =>
+          prev.map((order) =>
+            order.id === orderId ? { ...order, status: newStatus } : order
+          )
+        );
+      } else {
+        Alert.alert("Error", "Failed to update order status");
+      }
+    } catch {
+      Alert.alert("Error", "Failed to update order status");
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "pending": return { bg: "#FEF9C3", text: "#A16207" };
+      case "accepted": return { bg: "#DBEAFE", text: "#1D4ED8" };
+      case "preparing": return { bg: "#F3E8FF", text: "#7C3AED" };
+      case "ready": return { bg: "#DCFCE7", text: "#16A34A" };
+      case "delivered": return { bg: "#F3F4F6", text: "#6B7280" };
+      case "cancelled": return { bg: "#FEE2E2", text: "#DC2626" };
+      default: return { bg: "#F3F4F6", text: "#6B7280" };
+    }
+  };
+
+  const formatOrderTime = (dateStr: string) => {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    if (diffMins < 1) return "Just now";
+    if (diffMins < 60) return `${diffMins}m ago`;
+    const diffHrs = Math.floor(diffMins / 60);
+    if (diffHrs < 24) return `${diffHrs}h ago`;
+    return date.toLocaleDateString();
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -307,6 +378,8 @@ export default function RestaurantScreen() {
     );
   }
 
+  const pendingOrdersCount = orders.filter((o) => o.status === "pending").length;
+
   // Restaurant dashboard
   return (
     <ScrollView
@@ -344,7 +417,7 @@ export default function RestaurantScreen() {
 
       {/* Tabs */}
       <View style={styles.tabBar}>
-        {(["overview", "menu"] as Tab[]).map((t) => (
+        {(["overview", "menu", "orders"] as Tab[]).map((t) => (
           <TouchableOpacity
             key={t}
             style={[styles.tabItem, tab === t && styles.tabItemActive]}
@@ -355,7 +428,9 @@ export default function RestaurantScreen() {
             >
               {t === "overview"
                 ? "📊 Overview"
-                : `🍽️ Menu (${menuItems.length})`}
+                : t === "menu"
+                ? `🍽️ Menu (${menuItems.length})`
+                : `📋 Orders (${orders.length})`}
             </Text>
           </TouchableOpacity>
         ))}
@@ -387,6 +462,27 @@ export default function RestaurantScreen() {
             </View>
           </View>
 
+          <View style={[styles.statsGrid, { marginBottom: 16 }]}>
+            <View style={[styles.statCard, { backgroundColor: "#FEF9C3" }]}>
+              <Text style={[styles.statCardValue, { color: "#A16207" }]}>
+                {pendingOrdersCount}
+              </Text>
+              <Text style={styles.statCardLabel}>Pending Orders</Text>
+            </View>
+            <View style={[styles.statCard, { backgroundColor: "#F3E8FF" }]}>
+              <Text style={[styles.statCardValue, { color: "#7C3AED" }]}>
+                {orders.filter((o) => o.status === "preparing").length}
+              </Text>
+              <Text style={styles.statCardLabel}>Preparing</Text>
+            </View>
+            <View style={[styles.statCard, { backgroundColor: "#DCFCE7" }]}>
+              <Text style={[styles.statCardValue, { color: "#16A34A" }]}>
+                {orders.filter((o) => o.status === "ready").length}
+              </Text>
+              <Text style={styles.statCardLabel}>Ready</Text>
+            </View>
+          </View>
+
           <TouchableOpacity
             style={styles.quickAction}
             onPress={() => {
@@ -397,6 +493,18 @@ export default function RestaurantScreen() {
             <Ionicons name="add-circle-outline" size={24} color="#F97316" />
             <Text style={styles.quickActionText}>Add Menu Item</Text>
           </TouchableOpacity>
+
+          {pendingOrdersCount > 0 && (
+            <TouchableOpacity
+              style={[styles.quickAction, { marginTop: 10, borderColor: "#FDE68A" }]}
+              onPress={() => setTab("orders")}
+            >
+              <Ionicons name="alert-circle-outline" size={24} color="#D97706" />
+              <Text style={[styles.quickActionText, { color: "#D97706" }]}>
+                {pendingOrdersCount} pending order{pendingOrdersCount > 1 ? "s" : ""} — tap to view
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
       )}
 
@@ -551,6 +659,149 @@ export default function RestaurantScreen() {
                 </TouchableOpacity>
               </View>
             ))
+          )}
+        </View>
+      )}
+
+      {/* Orders Tab */}
+      {tab === "orders" && (
+        <View style={styles.section}>
+          {orders.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Text style={{ fontSize: 40 }}>📋</Text>
+              <Text style={styles.emptyTitle}>No orders yet</Text>
+              <Text style={styles.emptySubtitle}>
+                Orders will appear here when customers place them
+              </Text>
+            </View>
+          ) : (
+            orders.map((order) => {
+              const statusColor = getStatusColor(order.status);
+              return (
+                <View key={order.id} style={styles.orderCard}>
+                  {/* Order header */}
+                  <View style={styles.orderHeader}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.orderNumber}>#{order.orderNumber}</Text>
+                      <Text style={styles.orderTime}>{formatOrderTime(order.createdAt)}</Text>
+                    </View>
+                    <View style={[styles.orderStatusBadge, { backgroundColor: statusColor.bg }]}>
+                      <Text style={[styles.orderStatusText, { color: statusColor.text }]}>
+                        {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Customer info */}
+                  <View style={styles.orderCustomer}>
+                    <Ionicons name="person-outline" size={14} color={Colors.textSecondary} />
+                    <Text style={styles.orderCustomerText}>{order.customerName}</Text>
+                    <Ionicons name="call-outline" size={14} color={Colors.textSecondary} style={{ marginLeft: 10 }} />
+                    <Text style={styles.orderCustomerText}>{order.customerPhone}</Text>
+                  </View>
+
+                  {/* Items */}
+                  <View style={styles.orderItems}>
+                    {order.items.map((item) => (
+                      <View key={item.id} style={styles.orderItemRow}>
+                        <Text style={styles.orderItemQty}>{item.quantity}x</Text>
+                        <Text style={styles.orderItemName}>{item.menuItem.name}</Text>
+                        <Text style={styles.orderItemPrice}>₹{item.price}</Text>
+                      </View>
+                    ))}
+                  </View>
+
+                  {/* Instructions */}
+                  {order.instructions && (
+                    <View style={styles.orderInstructions}>
+                      <Ionicons name="chatbubble-outline" size={12} color={Colors.textMuted} />
+                      <Text style={styles.orderInstructionsText}>{order.instructions}</Text>
+                    </View>
+                  )}
+
+                  {/* Total */}
+                  <View style={styles.orderTotalRow}>
+                    <Text style={styles.orderTotalLabel}>Total</Text>
+                    <Text style={styles.orderTotalValue}>₹{order.total}</Text>
+                  </View>
+
+                  {/* Action buttons */}
+                  <View style={styles.orderActions}>
+                    {order.status === "pending" && (
+                      <>
+                        <TouchableOpacity
+                          style={[styles.orderActionBtn, { backgroundColor: "#DBEAFE" }]}
+                          onPress={() => updateOrderStatus(order.id, "accepted")}
+                        >
+                          <Text style={[styles.orderActionBtnText, { color: "#1D4ED8" }]}>Accept</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.orderActionBtn, { backgroundColor: "#FEE2E2" }]}
+                          onPress={() =>
+                            Alert.alert("Cancel Order", "Are you sure?", [
+                              { text: "No" },
+                              { text: "Yes", onPress: () => updateOrderStatus(order.id, "cancelled") },
+                            ])
+                          }
+                        >
+                          <Text style={[styles.orderActionBtnText, { color: "#DC2626" }]}>Cancel</Text>
+                        </TouchableOpacity>
+                      </>
+                    )}
+                    {order.status === "accepted" && (
+                      <>
+                        <TouchableOpacity
+                          style={[styles.orderActionBtn, { backgroundColor: "#F3E8FF" }]}
+                          onPress={() => updateOrderStatus(order.id, "preparing")}
+                        >
+                          <Text style={[styles.orderActionBtnText, { color: "#7C3AED" }]}>Preparing</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.orderActionBtn, { backgroundColor: "#FEE2E2" }]}
+                          onPress={() =>
+                            Alert.alert("Cancel Order", "Are you sure?", [
+                              { text: "No" },
+                              { text: "Yes", onPress: () => updateOrderStatus(order.id, "cancelled") },
+                            ])
+                          }
+                        >
+                          <Text style={[styles.orderActionBtnText, { color: "#DC2626" }]}>Cancel</Text>
+                        </TouchableOpacity>
+                      </>
+                    )}
+                    {order.status === "preparing" && (
+                      <>
+                        <TouchableOpacity
+                          style={[styles.orderActionBtn, { backgroundColor: "#DCFCE7" }]}
+                          onPress={() => updateOrderStatus(order.id, "ready")}
+                        >
+                          <Text style={[styles.orderActionBtnText, { color: "#16A34A" }]}>Ready</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.orderActionBtn, { backgroundColor: "#FEE2E2" }]}
+                          onPress={() =>
+                            Alert.alert("Cancel Order", "Are you sure?", [
+                              { text: "No" },
+                              { text: "Yes", onPress: () => updateOrderStatus(order.id, "cancelled") },
+                            ])
+                          }
+                        >
+                          <Text style={[styles.orderActionBtnText, { color: "#DC2626" }]}>Cancel</Text>
+                        </TouchableOpacity>
+                      </>
+                    )}
+                    {order.status === "ready" && (
+                      <TouchableOpacity
+                        style={[styles.orderActionBtn, { backgroundColor: "#F3F4F6", flex: 1 }]}
+                        onPress={() => updateOrderStatus(order.id, "delivered")}
+                      >
+                        <Text style={[styles.orderActionBtnText, { color: "#6B7280" }]}>Mark Delivered</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+              );
+            })
           )}
         </View>
       )}
@@ -720,4 +971,83 @@ const styles = StyleSheet.create({
   menuItemDesc: { fontSize: 11, color: Colors.textMuted, marginTop: 1 },
   availBadge: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20 },
   availBadgeText: { fontSize: 11, fontWeight: "700" },
+  // Orders styles
+  orderCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  orderHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 10,
+  },
+  orderNumber: { fontSize: 16, fontWeight: "800", color: Colors.text },
+  orderTime: { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
+  orderStatusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 20,
+  },
+  orderStatusText: { fontSize: 12, fontWeight: "700" },
+  orderCustomer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginBottom: 10,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  orderCustomerText: { fontSize: 13, color: Colors.textSecondary },
+  orderItems: { marginBottom: 8 },
+  orderItemRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 3,
+  },
+  orderItemQty: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#F97316",
+    width: 30,
+  },
+  orderItemName: { fontSize: 13, color: Colors.text, flex: 1 },
+  orderItemPrice: { fontSize: 13, color: Colors.textSecondary },
+  orderInstructions: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 6,
+    backgroundColor: "#FFFBEB",
+    padding: 8,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  orderInstructionsText: { fontSize: 12, color: "#92400E", flex: 1 },
+  orderTotalRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+    marginBottom: 10,
+  },
+  orderTotalLabel: { fontSize: 14, fontWeight: "700", color: Colors.text },
+  orderTotalValue: { fontSize: 16, fontWeight: "800", color: "#F97316" },
+  orderActions: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  orderActionBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+  orderActionBtnText: { fontSize: 14, fontWeight: "700" },
 });
