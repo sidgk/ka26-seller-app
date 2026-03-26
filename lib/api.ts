@@ -174,6 +174,9 @@ export interface Seller {
   name: string;
   email: string;
   whatsappNumber?: string;
+  role?: string;
+  sellerType?: string;
+  status?: string;
 }
 
 export interface Category {

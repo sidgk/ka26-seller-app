@@ -4,6 +4,7 @@ import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Colors } from "../../lib/theme";
 import { apiGet } from "../../lib/api";
+import { useAuth } from "../../lib/auth";
 
 function NotifBadgeIcon({ color, size }: { color: string; size: number }) {
   const [unread, setUnread] = useState(0);
@@ -53,6 +54,8 @@ const badgeStyles = StyleSheet.create({
 });
 
 export default function TabsLayout() {
+  const { seller } = useAuth();
+
   return (
     <Tabs
       screenOptions={{
@@ -65,7 +68,7 @@ export default function TabsLayout() {
           height: 56,
         },
         tabBarLabelStyle: {
-          fontSize: 11,
+          fontSize: 10,
           fontWeight: "600",
         },
         headerStyle: {
@@ -80,7 +83,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: "Dashboard",
+          title: "Home",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="grid-outline" size={size} color={color} />
           ),
@@ -112,6 +115,17 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="restaurant"
+        options={{
+          title: "Eats",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="restaurant-outline" size={size} color={color} />
+          ),
+          headerTitle: "My Restaurant",
+          headerTitleStyle: { fontWeight: "800", color: "#F97316" },
+        }}
+      />
+      <Tabs.Screen
         name="notifications"
         options={{
           title: "Alerts",
@@ -119,6 +133,18 @@ export default function TabsLayout() {
             <NotifBadgeIcon color={color} size={size} />
           ),
           headerTitle: "Notifications",
+        }}
+      />
+      <Tabs.Screen
+        name="admin"
+        options={{
+          title: "Admin",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="settings-outline" size={size} color={color} />
+          ),
+          headerTitle: "Admin Panel",
+          headerTitleStyle: { fontWeight: "800", color: "#7C3AED" },
+          href: seller?.role === "admin" ? undefined : null,
         }}
       />
       <Tabs.Screen
