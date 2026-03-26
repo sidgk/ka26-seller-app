@@ -1,6 +1,56 @@
+import { useState, useCallback, useEffect } from "react";
+import { View, Text, StyleSheet } from "react-native";
 import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Colors } from "../../lib/theme";
+import { apiGet } from "../../lib/api";
+
+function NotifBadgeIcon({ color, size }: { color: string; size: number }) {
+  const [unread, setUnread] = useState(0);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const data = await apiGet<{ unreadCount: number }>("/api/seller/notifications?limit=1");
+        setUnread(data.unreadCount);
+      } catch {}
+    };
+    load();
+    const interval = setInterval(load, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <View>
+      <Ionicons name="notifications-outline" size={size} color={color} />
+      {unread > 0 && (
+        <View style={badgeStyles.badge}>
+          <Text style={badgeStyles.badgeText}>{unread > 9 ? "9+" : unread}</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
+const badgeStyles = StyleSheet.create({
+  badge: {
+    position: "absolute",
+    top: -4,
+    right: -6,
+    backgroundColor: "#dc2626",
+    borderRadius: 8,
+    minWidth: 16,
+    height: 16,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 3,
+  },
+  badgeText: {
+    color: "#fff",
+    fontSize: 9,
+    fontWeight: "800",
+  },
+});
 
 export default function TabsLayout() {
   return (
@@ -59,6 +109,16 @@ export default function TabsLayout() {
             <Ionicons name="add-circle" size={28} color={Colors.primary} />
           ),
           headerTitle: "New Product",
+        }}
+      />
+      <Tabs.Screen
+        name="notifications"
+        options={{
+          title: "Alerts",
+          tabBarIcon: ({ color, size }) => (
+            <NotifBadgeIcon color={color} size={size} />
+          ),
+          headerTitle: "Notifications",
         }}
       />
       <Tabs.Screen
