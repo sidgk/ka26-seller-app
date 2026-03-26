@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const API_BASE =
-  process.env.EXPO_PUBLIC_API_URL || "https://ka26-marketplace-4374945524.us-central1.run.app";
+  process.env.EXPO_PUBLIC_API_URL || "https://ka26.shop";
 
 const TOKEN_KEY = "ka26_seller_token";
 
