@@ -2,6 +2,10 @@ import { useEffect } from "react";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { AuthProvider, useAuth } from "../lib/auth";
+import {
+  registerForPushNotifications,
+  setupNotificationHandlers,
+} from "../lib/pushNotifications";
 import { View, ActivityIndicator } from "react-native";
 import { Colors } from "../lib/theme";
 
@@ -9,6 +13,27 @@ function RootLayoutNav() {
   const { seller, loading } = useAuth();
   const router = useRouter();
   const segments = useSegments();
+
+  // Register push notifications when seller is logged in
+  useEffect(() => {
+    if (seller) {
+      registerForPushNotifications();
+    }
+  }, [seller]);
+
+  // Handle notification taps
+  useEffect(() => {
+    const cleanup = setupNotificationHandlers((path) => {
+      if (path.includes("/restaurant")) {
+        router.push("/(tabs)/restaurant");
+      } else if (path.includes("/product")) {
+        router.push("/(tabs)/products");
+      } else {
+        router.push("/(tabs)");
+      }
+    });
+    return cleanup;
+  }, []);
 
   useEffect(() => {
     if (loading) return;

@@ -142,6 +142,11 @@ export async function register(
 }
 
 export async function logout(): Promise<void> {
+  // Unregister push token before clearing auth
+  try {
+    const { unregisterPushToken } = await import("./pushNotifications");
+    await unregisterPushToken();
+  } catch {}
   await removeToken();
 }
 
